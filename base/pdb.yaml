@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: demo-web
+spec:
+  # During planned work, such as a node upgrade, the cluster must keep
+  # at least one copy running. Without this the site can go down
+  # during maintenance that was supposed to be safe.
+  minAvailable: 1
+
+  selector:
+    matchLabels:
+      app: demo-web

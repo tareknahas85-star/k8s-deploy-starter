@@ -1,0 +1,74 @@
+name: Check and deploy
+
+# Every push checks that the files are correct.
+# The deploy step is written out but switched off, because it needs a real
+# cluster and a secret. Read the notes inside before you turn it on.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.0
+
+      - name: Build every environment
+        run: |
+          for dir in overlays/*/; do
+            echo "Building $dir"
+            kubectl kustomize "$dir" > /dev/null
+          done
+          echo "All environments build correctly."
+
+      - name: Check the files against the Kubernetes rules
+        run: |
+          curl -sSL -o kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar xf kubeconform.tar.gz kubeconform
+          for dir in overlays/*/; do
+            echo "Checking $dir"
+            kubectl kustomize "$dir" | ./kubeconform -strict -summary -ignore-missing-schemas
+          done
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+
+    # Turn this off to enable the job. To make it work you need:
+    #   1. A kubeconfig file for your cluster, saved as the secret KUBE_CONFIG
+    #      (base64 encoded).
+    #   2. To change the environment below from dev to what you want.
+    # Deploy only from main, never from a pull request.
+    if: false
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.0
+
+      - name: Set up the connection to the cluster
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Apply
+        run: kubectl apply -k overlays/dev
+
+      - name: Wait until it is really running
+        run: |
+          kubectl rollout status deployment/dev-demo-web -n demo-dev --timeout=180s

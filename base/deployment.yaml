@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-web
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: demo-web
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never take a copy away during an update, only add one.
+      # This way the app keeps answering while the new version comes up.
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: demo-web
+    spec:
+      securityContext:
+        # Run as a normal user, never as root.
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+
+          ports:
+            - name: http
+              containerPort: 8080
+
+          envFrom:
+            - configMapRef:
+                name: demo-web-config
+
+          # Can this copy take traffic right now?
+          # While this fails, the copy is kept out of the service.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          # Is this copy stuck and does it need a restart?
+          # Kept slower and more forgiving than the readiness check on purpose,
+          # so a slow app is not restarted for no reason.
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          resources:
+            # What the app is promised. Kubernetes uses this to pick a node.
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            # The ceiling. Protects everything else on the node.
+            limits:
+              cpu: 500m
+              memory: 256Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # The image needs somewhere to write, and the root file system
+          # is read only, so give it memory backed scratch space.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+
+      # Give the app time to finish what it is doing before it is stopped.
+      terminationGracePeriodSeconds: 30

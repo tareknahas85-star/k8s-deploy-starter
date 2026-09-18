@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: demo-prod
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+namePrefix: prod-
+
+commonLabels:
+  environment: prod
+
+# Production runs more copies and is given more room.
+patches:
+  - path: replicas-and-resources.yaml
+    target:
+      kind: Deployment
+      name: demo-web
+  - path: ingress-host.yaml
+    target:
+      kind: Ingress
+      name: demo-web
+  - path: hpa.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: demo-web
+
+configMapGenerator:
+  - name: demo-web-config
+    behavior: merge
+    literals:
+      - APP_ENV=prod
+      - LOG_LEVEL=warn

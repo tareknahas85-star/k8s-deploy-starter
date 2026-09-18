@@ -1,0 +1,29 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: demo-web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: demo-web
+
+  minReplicas: 2
+  maxReplicas: 10
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+  behavior:
+    # Add copies quickly when traffic rises.
+    scaleUp:
+      stabilizationWindowSeconds: 30
+    # Remove them slowly, so a short quiet moment does not
+    # take away copies you are about to need again.
+    scaleDown:
+      stabilizationWindowSeconds: 300
